@@ -1,0 +1,9 @@
+[package]
+name = "blag"
+version = "0.1.0"
+authors = ["Nick Pillitteri <nickp@smartertravelmedia.com>"]
+
+[dependencies]
+crossbeam-channel = "0.2.6"
+libc = "0.2.43"
+signal-hook = "0.1.5"
