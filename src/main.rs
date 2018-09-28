@@ -67,5 +67,7 @@ fn main() {
         .unwrap();
 
     pid.lock().unwrap().set(Some(child.id() as i32));
+
+    println!("My pid: {} - child: {}", process::id(), child.id());
     child.wait().unwrap();
 }
