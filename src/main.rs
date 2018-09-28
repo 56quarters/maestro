@@ -11,7 +11,7 @@ use std::process::{self, Command};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-fn launch_signals(signums: &[c_int]) -> Receiver<c_int> {
+fn receive_signals(signums: &[c_int]) -> Receiver<c_int> {
     let (s, r) = crossbeam_channel::unbounded();
     let signals = Signals::new(signums).unwrap();
 
@@ -24,6 +24,19 @@ fn launch_signals(signums: &[c_int]) -> Receiver<c_int> {
     r
 }
 
+fn handle_signals(pid: Arc<Mutex<Cell<Option<i32>>>>, receiver: Receiver<i32>) {
+    thread::spawn(move || {
+        for sig in receiver {
+            let child_pid = pid.lock().unwrap().get();
+
+            if let Some(p) = child_pid {
+                println!("Sending signal {:?} to {:?}", sig, p);
+                unsafe { libc::kill(p, sig as c_int) };
+            }
+        }
+    });
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
@@ -31,7 +44,7 @@ fn main() {
         process::exit(1);
     }
 
-    let receiver = launch_signals(&[
+    let receiver = receive_signals(&[
         signal_hook::SIGABRT,
         signal_hook::SIGALRM,
         signal_hook::SIGBUS,
@@ -43,30 +56,16 @@ fn main() {
         signal_hook::SIGUSR2,
     ]);
 
-    let pid = Arc::new(Mutex::new(Cell::new(0)));
+    let pid = Arc::new(Mutex::new(Cell::new(None)));
     let our_pid = Arc::clone(&pid);
 
-    thread::spawn(move || {
-        for i in receiver {
-            let child_pid = our_pid.lock().unwrap().get();
-
-            if child_pid != 0 {
-                println!("Sending signal {:?} to {:?}", i, child_pid);
-
-                unsafe {
-                    libc::kill(child_pid, i as c_int);
-                };
-            } else {
-                println!("Invalid pid {:?}", child_pid);
-            }
-        }
-    });
+    handle_signals(our_pid, receiver);
 
     let mut child = Command::new(&args[1])
         .args(args[2..].iter())
         .spawn()
         .unwrap();
 
-    pid.lock().unwrap().set(child.id() as i32);
+    pid.lock().unwrap().set(Some(child.id() as i32));
     child.wait().unwrap();
 }
