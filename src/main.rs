@@ -2,7 +2,7 @@ extern crate crossbeam_channel;
 extern crate libc;
 extern crate signal_hook;
 
-use crossbeam_channel::{Receiver, Sender};
+use crossbeam_channel::Receiver;
 use libc::c_int;
 use signal_hook::iterator::Signals;
 use std::cell::Cell;
@@ -11,9 +11,9 @@ use std::process::{self, Command};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-fn launch_signals(signals: &[c_int]) -> Receiver<c_int> {
-    let (s, r) = crossbeam_channel::bounded(100);
-    let signals = Signals::new(signals).unwrap();
+fn launch_signals(signums: &[c_int]) -> Receiver<c_int> {
+    let (s, r) = crossbeam_channel::unbounded();
+    let signals = Signals::new(signums).unwrap();
 
     thread::spawn(move || {
         for signal in signals.forever() {
@@ -32,10 +32,15 @@ fn main() {
     }
 
     let receiver = launch_signals(&[
+        signal_hook::SIGABRT,
+        signal_hook::SIGALRM,
+        signal_hook::SIGBUS,
         signal_hook::SIGHUP,
-        signal_hook::SIGTERM,
         signal_hook::SIGINT,
         signal_hook::SIGQUIT,
+        signal_hook::SIGTERM,
+        signal_hook::SIGUSR1,
+        signal_hook::SIGUSR2,
     ]);
 
     let pid = Arc::new(Mutex::new(Cell::new(0)));
