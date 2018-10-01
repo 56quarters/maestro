@@ -13,6 +13,9 @@ use std::process::{self, Command};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+///
+///
+/// 
 const SIGNALS_TO_HANDLE: &[c_int] = &[
     signal_hook::SIGABRT,
     signal_hook::SIGALRM,
@@ -33,41 +36,59 @@ const SIGNALS_TO_HANDLE: &[c_int] = &[
     signal_hook::SIGWINCH,
 ];
 
-//#[derive(Debug)]
-struct SignalMasker {
+
+///
+///
+/// 
+struct ThreadMasker {
     handle: SigSet,
 }
 
-impl SignalMasker {
+impl ThreadMasker {
     fn from_allowed(allowed: &[c_int]) -> Self {
-        let mut mask = SigSet::all();
+        // Start from an empty set of signals and only add the ones that we expect
+        // to handle and hence need to mask from all threads that *aren't* specifically
+        // for handling signals.
+        let mut mask = SigSet::empty();
 
         for sig in allowed {
-            mask.remove(Signal::from_c_int(*sig).unwrap());
+            mask.add(Signal::from_c_int(*sig).unwrap());
         }
 
-        SignalMasker { handle: mask }
+        ThreadMasker { handle: mask }
     }
 
+    ///
+    ///
+    ///
     fn allow_for_thread(&self) {
         self.handle.thread_unblock().unwrap();
     }
 
+    ///
+    ///
+    ///
     fn block_for_thread(&self) {
         self.handle.thread_block().unwrap();
     }
+
+    fn print_blocked_for_thread(&self) {
+        let t = SigSet::thread_get_mask().unwrap();
+
+        let mut blocked = vec![];
+        for sig in Signal::iterator() {
+            if t.contains(sig) {
+                blocked.push(sig)
+            }
+        }
+
+        println!("{:?} blocked: {:?}", thread::current().id(), blocked);
+    }
 }
 
-fn sig_thread_block() {
-    let masker = SignalMasker::from_allowed(SIGNALS_TO_HANDLE);
-    masker.block_for_thread()
-}
-
-fn sig_thread_allow() {
-    let masker = SignalMasker::from_allowed(SIGNALS_TO_HANDLE);
-    masker.allow_for_thread();
-}
-
+///
+///
+///
 #[derive(Debug)]
 struct ChildPid {
     pid: Mutex<Cell<Option<i32>>>,
@@ -101,34 +122,83 @@ impl Default for ChildPid {
     }
 }
 
-fn receive_signals(signums: &[c_int]) -> Receiver<c_int> {
-    let (s, r) = crossbeam_channel::unbounded();
-    let signals = Signals::new(signums).unwrap();
-
-    thread::spawn(move || {
-        sig_thread_allow();
-
-        for signal in signals.forever() {
-            s.send(signal);
-        }
-    });
-
-    r
+///
+///
+/// 
+struct SignalCatcher {
+    signals: Signals,
+    masker: ThreadMasker,
 }
 
-fn handle_signals(child_pid: Arc<ChildPid>, receiver: Receiver<c_int>) {
-    thread::spawn(move || {
-        sig_thread_block();
-
-        for sig in receiver {
-            let pid = child_pid.get_pid();
-
-            if let Some(p) = pid {
-                println!("Sending signal {:?} to {:?}", sig, p);
-                unsafe { libc::kill(p, sig) };
-            }
+impl SignalCatcher {
+    fn new(allowed: &[c_int]) -> Self {
+        SignalCatcher {
+            signals: Signals::new(allowed).unwrap(),
+            masker: ThreadMasker::from_allowed(allowed),
         }
-    });
+    }
+
+    ///
+    ///
+    ///
+    fn launch(self) -> Receiver<Signal> {
+        let (send, recv) = crossbeam_channel::unbounded();
+
+        thread::spawn(move || {
+            self.masker.allow_for_thread();
+
+            for sig in self.signals.forever() {
+                send.send(Signal::from_c_int(sig).unwrap());
+            }
+        });
+
+        recv
+    }
+}
+
+///
+///
+///
+struct SignalHandler {
+    receiver: Receiver<Signal>,
+    child: Arc<ChildPid>,
+    masker: ThreadMasker,
+}
+
+impl SignalHandler {
+    fn new(receiver: Receiver<Signal>, child: Arc<ChildPid>, allowed: &[c_int]) -> Self {
+        SignalHandler {
+            receiver,
+            child,
+            masker: ThreadMasker::from_allowed(allowed),
+        }
+    }
+
+    fn wait_child() {
+        unimplemented!();
+    }
+
+    fn propagate(pid: i32, sig: Signal) {
+        println!("{:?} sending signal {:?} to {:?}", thread::current().id(), sig, pid);
+        unsafe { libc::kill(pid, sig as c_int) };
+    }
+
+    ///
+    ///
+    /// 
+    fn launch(self) {
+        thread::spawn(move || {
+            self.masker.block_for_thread();
+
+            for sig in self.receiver {
+                let pid = self.child.get_pid();
+
+                if let Some(p) = pid {
+                    Self::propagate(p, sig)
+                }
+            }
+        });
+    }
 }
 
 fn main() {
@@ -138,13 +208,17 @@ fn main() {
         process::exit(1);
     }
 
-    sig_thread_block();
-    let receiver = receive_signals(SIGNALS_TO_HANDLE);
+    let masker = ThreadMasker::from_allowed(SIGNALS_TO_HANDLE);
+    masker.block_for_thread();
+    
+    let catcher = SignalCatcher::new(SIGNALS_TO_HANDLE);
+    let receiver = catcher.launch();
 
     let pid = Arc::new(ChildPid::default());
-    let our_pid = Arc::clone(&pid);
+    let pid_clone = Arc::clone(&pid);
 
-    handle_signals(our_pid, receiver);
+    let handler = SignalHandler::new(receiver, pid_clone, SIGNALS_TO_HANDLE);
+    handler.launch();
 
     let mut child = Command::new(&args[1])
         .args(args[2..].iter())
