@@ -116,7 +116,7 @@ fn receive_signals(signums: &[c_int]) -> Receiver<c_int> {
     r
 }
 
-fn handle_signals(child_pid: Arc<ChildPid>, receiver: Receiver<i32>) {
+fn handle_signals(child_pid: Arc<ChildPid>, receiver: Receiver<c_int>) {
     thread::spawn(move || {
         sig_thread_block();
 
@@ -125,7 +125,7 @@ fn handle_signals(child_pid: Arc<ChildPid>, receiver: Receiver<i32>) {
 
             if let Some(p) = pid {
                 println!("Sending signal {:?} to {:?}", sig, p);
-                unsafe { libc::kill(p, sig as c_int) };
+                unsafe { libc::kill(p, sig) };
             }
         }
     });
