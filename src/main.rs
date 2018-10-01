@@ -13,6 +13,8 @@ use std::process::{self, Command};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+const CHANNEL_CAP: usize = 32;
+
 ///
 ///
 ///
@@ -141,7 +143,7 @@ impl SignalCatcher {
     ///
     ///
     fn launch(self) -> Receiver<Signal> {
-        let (send, recv) = crossbeam_channel::unbounded();
+        let (send, recv) = crossbeam_channel::bounded(CHANNEL_CAP);
 
         thread::spawn(move || {
             self.masker.allow_for_thread();
