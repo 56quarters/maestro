@@ -10,6 +10,7 @@ use signal_hook::iterator::Signals;
 use std::cell::Cell;
 use std::env;
 use std::process::{self, Command};
+use std::ptr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -83,7 +84,7 @@ impl ThreadMasker {
             }
         }
 
-        println!("{:?} blocked: {:?}", thread::current().id(), blocked);
+        eprintln!("{:?} blocked: {:?}", thread::current().id(), blocked);
     }
 }
 
@@ -142,10 +143,9 @@ impl SignalCatcher {
     ///
     ///
     ///
-    fn launch(self) -> Receiver<Signal> {
+    fn launch(self) -> (thread::JoinHandle<()>, Receiver<Signal>) {
         let (send, recv) = crossbeam_channel::bounded(CHANNEL_CAP);
-
-        thread::spawn(move || {
+        let handle = thread::spawn(move || {
             self.masker.allow_for_thread();
 
             for sig in self.signals.forever() {
@@ -153,7 +153,7 @@ impl SignalCatcher {
             }
         });
 
-        recv
+        (handle, recv)
     }
 }
 
@@ -176,18 +176,26 @@ impl SignalHandler {
     }
 
     fn wait_child() {
-        unimplemented!();
+        loop {
+            let res = unsafe { libc::waitpid(-1, ptr::null_mut(), libc::WNOHANG) };
+            if res <= 0 {
+                eprintln!("No children have changed state yet: {}", res);
+                break;
+            } else {
+                eprintln!("Pid of child: {}", res);
+            }
+        }
     }
 
     fn propagate(pid: i32, sig: Signal) {
-        println!("{:?} sending {:?} to {:?}", thread::current().id(), sig, pid);
+        eprintln!("{:?} sending {:?} to {:?}", thread::current().id(), sig, pid);
         unsafe { libc::kill(pid, sig as c_int) };
     }
 
     ///
     ///
     ///
-    fn launch(self) {
+    fn launch(self) -> thread::JoinHandle<()> {
         thread::spawn(move || {
             self.masker.block_for_thread();
 
@@ -195,10 +203,14 @@ impl SignalHandler {
                 let pid = self.child.get_pid();
 
                 if let Some(p) = pid {
-                    Self::propagate(p, sig)
+                    if sig == Signal::SIGCHLD {
+                        Self::wait_child();
+                    }
+
+                    Self::propagate(p, sig);
                 }
             }
-        });
+        })
     }
 }
 
@@ -213,13 +225,13 @@ fn main() {
     masker.block_for_thread();
 
     let catcher = SignalCatcher::new(SIGNALS_TO_HANDLE);
-    let receiver = catcher.launch();
+    let (t1, receiver) = catcher.launch();
 
     let pid = Arc::new(ChildPid::default());
     let pid_clone = Arc::clone(&pid);
 
     let handler = SignalHandler::new(receiver, pid_clone, SIGNALS_TO_HANDLE);
-    handler.launch();
+    let t2 = handler.launch();
 
     let mut child = Command::new(&args[1])
         .args(args[2..].iter())
@@ -228,5 +240,12 @@ fn main() {
 
     pid.set_pid(child.id() as i32);
     println!("My pid: {} - child: {}", process::id(), child.id());
-    child.wait().unwrap();
+
+    match child.wait() {
+        Err(e) => eprintln!("error waiting for child: {}", e),
+        _ => (),
+    }
+
+    t1.join().unwrap();
+    t2.join().unwrap();
 }
