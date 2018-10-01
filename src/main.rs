@@ -15,7 +15,7 @@ use std::thread;
 
 ///
 ///
-/// 
+///
 const SIGNALS_TO_HANDLE: &[c_int] = &[
     signal_hook::SIGABRT,
     signal_hook::SIGALRM,
@@ -36,16 +36,15 @@ const SIGNALS_TO_HANDLE: &[c_int] = &[
     signal_hook::SIGWINCH,
 ];
 
-
 ///
 ///
-/// 
+///
 struct ThreadMasker {
-    handle: SigSet,
+    mask: SigSet,
 }
 
 impl ThreadMasker {
-    fn from_allowed(allowed: &[c_int]) -> Self {
+    fn new(allowed: &[c_int]) -> Self {
         // Start from an empty set of signals and only add the ones that we expect
         // to handle and hence need to mask from all threads that *aren't* specifically
         // for handling signals.
@@ -55,21 +54,21 @@ impl ThreadMasker {
             mask.add(Signal::from_c_int(*sig).unwrap());
         }
 
-        ThreadMasker { handle: mask }
+        ThreadMasker { mask }
     }
 
     ///
     ///
     ///
     fn allow_for_thread(&self) {
-        self.handle.thread_unblock().unwrap();
+        self.mask.thread_unblock().unwrap();
     }
 
     ///
     ///
     ///
     fn block_for_thread(&self) {
-        self.handle.thread_block().unwrap();
+        self.mask.thread_block().unwrap();
     }
 
     fn print_blocked_for_thread(&self) {
@@ -124,7 +123,7 @@ impl Default for ChildPid {
 
 ///
 ///
-/// 
+///
 struct SignalCatcher {
     signals: Signals,
     masker: ThreadMasker,
@@ -134,7 +133,7 @@ impl SignalCatcher {
     fn new(allowed: &[c_int]) -> Self {
         SignalCatcher {
             signals: Signals::new(allowed).unwrap(),
-            masker: ThreadMasker::from_allowed(allowed),
+            masker: ThreadMasker::new(allowed),
         }
     }
 
@@ -170,7 +169,7 @@ impl SignalHandler {
         SignalHandler {
             receiver,
             child,
-            masker: ThreadMasker::from_allowed(allowed),
+            masker: ThreadMasker::new(allowed),
         }
     }
 
@@ -179,13 +178,13 @@ impl SignalHandler {
     }
 
     fn propagate(pid: i32, sig: Signal) {
-        println!("{:?} sending signal {:?} to {:?}", thread::current().id(), sig, pid);
+        println!("{:?} sending {:?} to {:?}", thread::current().id(), sig, pid);
         unsafe { libc::kill(pid, sig as c_int) };
     }
 
     ///
     ///
-    /// 
+    ///
     fn launch(self) {
         thread::spawn(move || {
             self.masker.block_for_thread();
@@ -208,9 +207,9 @@ fn main() {
         process::exit(1);
     }
 
-    let masker = ThreadMasker::from_allowed(SIGNALS_TO_HANDLE);
+    let masker = ThreadMasker::new(SIGNALS_TO_HANDLE);
     masker.block_for_thread();
-    
+
     let catcher = SignalCatcher::new(SIGNALS_TO_HANDLE);
     let receiver = catcher.launch();
 
