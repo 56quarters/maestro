@@ -11,6 +11,34 @@ use std::process::{self, Command};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+struct ChildPid {
+    pid: Mutex<Cell<Option<i32>>>,
+}
+
+impl ChildPid {
+    fn get_pid(&self) -> Option<i32> {
+        let cell = self.pid.lock().unwrap();
+        cell.get()
+    }
+
+    fn set_pid(&self, pid: i32) {
+        let cell = self.pid.lock().unwrap();
+        cell.set(Some(pid))
+    }
+}
+
+impl From<i32> for ChildPid {
+    fn from(pid: i32) -> Self {
+        ChildPid { pid: Mutex::new(Cell::new(Some(pid))) }
+    }
+}
+
+impl Default for ChildPid {
+    fn default() -> Self {
+        ChildPid { pid: Mutex::new(Cell::new(None)) }
+    }
+}
+
 fn receive_signals(signums: &[c_int]) -> Receiver<c_int> {
     let (s, r) = crossbeam_channel::unbounded();
     let signals = Signals::new(signums).unwrap();
@@ -24,12 +52,12 @@ fn receive_signals(signums: &[c_int]) -> Receiver<c_int> {
     r
 }
 
-fn handle_signals(pid: Arc<Mutex<Cell<Option<i32>>>>, receiver: Receiver<i32>) {
+fn handle_signals(child_pid: Arc<ChildPid>, receiver: Receiver<i32>) {
     thread::spawn(move || {
         for sig in receiver {
-            let child_pid = pid.lock().unwrap().get();
+            let pid = child_pid.get_pid();
 
-            if let Some(p) = child_pid {
+            if let Some(p) = pid {
                 println!("Sending signal {:?} to {:?}", sig, p);
                 unsafe { libc::kill(p, sig as c_int) };
             }
@@ -56,7 +84,7 @@ fn main() {
         signal_hook::SIGUSR2,
     ]);
 
-    let pid = Arc::new(Mutex::new(Cell::new(None)));
+    let pid = Arc::new(ChildPid::default());
     let our_pid = Arc::clone(&pid);
 
     handle_signals(our_pid, receiver);
@@ -66,7 +94,7 @@ fn main() {
         .spawn()
         .unwrap();
 
-    pid.lock().unwrap().set(Some(child.id() as i32));
+    pid.set_pid(child.id() as i32);
 
     println!("My pid: {} - child: {}", process::id(), child.id());
     child.wait().unwrap();
