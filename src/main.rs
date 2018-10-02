@@ -143,9 +143,9 @@ impl SignalCatcher {
     ///
     ///
     ///
-    fn launch(self) -> (thread::JoinHandle<()>, Receiver<Signal>) {
+    fn launch(self) -> Receiver<Signal> {
         let (send, recv) = crossbeam_channel::bounded(CHANNEL_CAP);
-        let handle = thread::spawn(move || {
+        thread::spawn(move || {
             self.masker.allow_for_thread();
 
             for sig in self.signals.forever() {
@@ -153,7 +153,7 @@ impl SignalCatcher {
             }
         });
 
-        (handle, recv)
+        recv
     }
 }
 
@@ -195,7 +195,7 @@ impl SignalHandler {
     ///
     ///
     ///
-    fn launch(self) -> thread::JoinHandle<()> {
+    fn launch(self) {
         thread::spawn(move || {
             self.masker.block_for_thread();
 
@@ -210,7 +210,7 @@ impl SignalHandler {
                     Self::propagate(p, sig);
                 }
             }
-        })
+        });
     }
 }
 
@@ -225,27 +225,21 @@ fn main() {
     masker.block_for_thread();
 
     let catcher = SignalCatcher::new(SIGNALS_TO_HANDLE);
-    let (t1, receiver) = catcher.launch();
+    let receiver = catcher.launch();
 
     let pid = Arc::new(ChildPid::default());
     let pid_clone = Arc::clone(&pid);
 
     let handler = SignalHandler::new(receiver, pid_clone, SIGNALS_TO_HANDLE);
-    let t2 = handler.launch();
+    handler.launch();
 
-    let mut child = Command::new(&args[1])
-        .args(args[2..].iter())
-        .spawn()
-        .unwrap();
+    let mut child = Command::new(&args[1]).args(args[2..].iter()).spawn().unwrap();
 
     pid.set_pid(child.id() as i32);
-    println!("My pid: {} - child: {}", process::id(), child.id());
+    eprintln!("My pid: {} - child: {}", process::id(), child.id());
 
     match child.wait() {
         Err(e) => eprintln!("error waiting for child: {}", e),
         _ => (),
     }
-
-    t1.join().unwrap();
-    t2.join().unwrap();
 }
