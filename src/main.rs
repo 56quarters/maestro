@@ -12,7 +12,7 @@ use nix::sys::signal::{SigSet, Signal};
 use signal_hook::iterator::Signals;
 use std::cell::Cell;
 use std::env;
-use std::process::{self, Command};
+use std::process::Command;
 use std::ptr;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -75,19 +75,6 @@ impl ThreadMasker {
     ///
     fn block_for_thread(&self) {
         self.mask.thread_block().unwrap();
-    }
-
-    fn print_blocked_for_thread(&self) {
-        let t = SigSet::thread_get_mask().unwrap();
-
-        let mut blocked = vec![];
-        for sig in Signal::iterator() {
-            if t.contains(sig) {
-                blocked.push(sig)
-            }
-        }
-
-        eprintln!("{:?} blocked: {:?}", thread::current().id(), blocked);
     }
 }
 
@@ -182,16 +169,12 @@ impl SignalHandler {
         loop {
             let res = unsafe { libc::waitpid(-1, ptr::null_mut(), libc::WNOHANG) };
             if res <= 0 {
-                eprintln!("No children have changed state yet: {}", res);
                 break;
-            } else {
-                eprintln!("Pid of child: {}", res);
             }
         }
     }
 
     fn propagate(pid: i32, sig: Signal) {
-        eprintln!("{:?} sending {:?} to {:?}", thread::current().id(), sig, pid);
         unsafe { libc::kill(pid, sig as c_int) };
     }
 
@@ -221,28 +204,18 @@ fn parse_cli_opts<'a>(args: Vec<String>) -> ArgMatches<'a> {
     App::new("PID 1")
         .version(crate_version!())
         .set_term_width(72)
-        .about(
-            "\nIt does PID 1 things",
-        )
-        .arg(
-            Arg::with_name("command")
-                .index(1)
-                .help("Command to execute, forwarding signals to."),
-        )
+        .about("\nIt does PID 1 things")
         .arg(
             Arg::with_name("arguments")
-                .index(2)
                 .multiple(true)
-                .help("Arguments to the command being executed.")
+                .help("Command to execute and arguments to it."),
         )
         .get_matches_from(args)
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    let matches = parse_cli_opts(args);
-    let command = value_t!(matches, "command", String).unwrap_or_else(|e| e.exit());
-    let command_args = values_t!(matches, "arguments", String).unwrap_or_else(|e| e.exit());
+    let matches = parse_cli_opts(env::args().collect());
+    let arguments = values_t!(matches, "arguments", String).unwrap_or_else(|e| e.exit());
 
     let masker = ThreadMasker::new(SIGNALS_TO_HANDLE);
     masker.block_for_thread();
@@ -256,9 +229,8 @@ fn main() {
     let handler = SignalHandler::new(receiver, pid_clone, SIGNALS_TO_HANDLE);
     handler.launch();
 
-    let mut child = Command::new(&command).args(command_args.iter()).spawn().unwrap();
+    let mut child = Command::new(&arguments[0]).args(&arguments[1..]).spawn().unwrap();
     pid.set_pid(child.id() as i32);
-    eprintln!("My pid: {} - child: {}", process::id(), child.id());
 
     match child.wait() {
         Err(e) => eprintln!("error waiting for child: {}", e),
