@@ -19,7 +19,7 @@ use nix::unistd::Pid;
 use signal_hook::iterator::Signals;
 use std::cell::Cell;
 use std::env;
-use std::process::Command;
+use std::process::{self, Command};
 use std::ptr;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -274,11 +274,20 @@ fn main() {
     let handler = SignalHandler::new(receiver, pid_clone, SIGNALS_TO_HANDLE);
     handler.launch();
 
-    let mut child = Command::new(&arguments[0]).args(&arguments[1..]).spawn().unwrap();
-    pid.set_pid(Pid::from_raw(child.id() as pid_t));
+    let mut child = match Command::new(&arguments[0]).args(&arguments[1..]).spawn() {
+        Err(e) => {
+            eprintln!("blag: error: {}", e);
+            process::exit(1);
+        }
+        Ok(c) => c,
+    };
 
+    pid.set_pid(Pid::from_raw(child.id() as pid_t));
     match child.wait() {
-        Err(e) => eprintln!("error waiting for child: {}", e),
+        Err(e) => {
+            eprintln!("blag: error: {}", e);
+            process::exit(1);
+        }
         _ => (),
     }
 }
