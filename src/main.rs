@@ -192,6 +192,15 @@ impl SignalHandler {
         }
     }
 
+    /// Take all appropriate action for the signal including forwarding it to the child PID.
+    fn dispatch(pid: i32, sig: Signal) {
+        if sig == Signal::SIGCHLD {
+            Self::wait_child();
+        }
+
+        Self::propagate(pid, sig);
+    }
+
     /// Use `libc::waitpid` to cleanup after any children that have changed state.
     fn wait_child() {
         loop {
@@ -218,11 +227,7 @@ impl SignalHandler {
                 let pid = self.child.get_pid();
 
                 if let Some(p) = pid {
-                    if sig == Signal::SIGCHLD {
-                        Self::wait_child();
-                    }
-
-                    Self::propagate(p, sig);
+                    Self::dispatch(p, sig);
                 }
             }
         });
