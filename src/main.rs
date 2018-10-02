@@ -14,7 +14,7 @@ extern crate signal_hook;
 use clap::{App, Arg, ArgMatches};
 use crossbeam_channel::Receiver;
 use libc::c_int;
-use nix::sys::signal::{Signal, SigSet};
+use nix::sys::signal::{SigSet, Signal};
 use signal_hook::iterator::Signals;
 use std::cell::Cell;
 use std::env;
@@ -29,24 +29,24 @@ const CHANNEL_CAP: usize = 32;
 ///
 /// These signals will be caught and forwarded on a single thread in this process
 /// and masked in all other threads.
-const SIGNALS_TO_HANDLE: &[c_int] = &[
-    signal_hook::SIGABRT,
-    signal_hook::SIGALRM,
-    signal_hook::SIGBUS,
-    signal_hook::SIGCHLD,
-    signal_hook::SIGCONT,
-    signal_hook::SIGHUP,
-    signal_hook::SIGINT,
-    signal_hook::SIGIO,
-    signal_hook::SIGPIPE,
-    signal_hook::SIGPROF,
-    signal_hook::SIGQUIT,
-    signal_hook::SIGSYS,
-    signal_hook::SIGTERM,
-    signal_hook::SIGTRAP,
-    signal_hook::SIGUSR1,
-    signal_hook::SIGUSR2,
-    signal_hook::SIGWINCH,
+const SIGNALS_TO_HANDLE: &[Signal] = &[
+    Signal::SIGABRT,
+    Signal::SIGALRM,
+    Signal::SIGBUS,
+    Signal::SIGCHLD,
+    Signal::SIGCONT,
+    Signal::SIGHUP,
+    Signal::SIGINT,
+    Signal::SIGIO,
+    Signal::SIGPIPE,
+    Signal::SIGPROF,
+    Signal::SIGQUIT,
+    Signal::SIGSYS,
+    Signal::SIGTERM,
+    Signal::SIGTRAP,
+    Signal::SIGUSR1,
+    Signal::SIGUSR2,
+    Signal::SIGWINCH,
 ];
 
 /// Selectively mask or unmask a set of signals for the current thread.
@@ -61,25 +61,33 @@ struct ThreadMasker {
 
 impl ThreadMasker {
     /// Set the allowed signals that will be blocked or unblocked.
-    fn new(allowed: &[c_int]) -> Self {
+    fn new(allowed: &[Signal]) -> Self {
         // Start from an empty set of signals and only add the ones that we expect
         // to handle and hence need to mask from all threads that *aren't* specifically
         // for handling signals.
         let mut mask = SigSet::empty();
 
         for sig in allowed {
-            mask.add(Signal::from_c_int(*sig).unwrap());
+            mask.add(*sig);
         }
 
         ThreadMasker { mask }
     }
 
     /// Explicitly allow the registered signals for the thread this method is run in.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the thread signal mask cannot be set.
     fn allow_for_thread(&self) {
         self.mask.thread_unblock().unwrap();
     }
 
     /// Explicitly block the registered signals for the thread this method is run in.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the thread signal mask cannot be set.
     fn block_for_thread(&self) {
         self.mask.thread_block().unwrap();
     }
@@ -135,9 +143,11 @@ struct SignalCatcher {
 }
 
 impl SignalCatcher {
-    fn new(allowed: &[c_int]) -> Self {
+    fn new(allowed: &[Signal]) -> Self {
+        let allowed_ints: Vec<i32> = allowed.iter().map(|s| *s as i32).collect();
+
         SignalCatcher {
-            signals: Signals::new(allowed).unwrap(),
+            signals: Signals::new(allowed_ints).unwrap(),
             masker: ThreadMasker::new(allowed),
         }
     }
@@ -174,7 +184,7 @@ struct SignalHandler {
 impl SignalHandler {
     /// Set the channel for receiving signals, PID of our child, and list of signals
     /// that should be blocked in our thread since they are being handled elsewhere.
-    fn new(receiver: Receiver<Signal>, child: Arc<ChildPid>, allowed: &[c_int]) -> Self {
+    fn new(receiver: Receiver<Signal>, child: Arc<ChildPid>, allowed: &[Signal]) -> Self {
         SignalHandler {
             receiver,
             child,
