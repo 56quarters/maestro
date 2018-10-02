@@ -1,8 +1,11 @@
+#[macro_use]
+extern crate clap;
 extern crate crossbeam_channel;
 extern crate libc;
 extern crate nix;
 extern crate signal_hook;
 
+use clap::{App, Arg, ArgMatches};
 use crossbeam_channel::Receiver;
 use libc::c_int;
 use nix::sys::signal::{SigSet, Signal};
@@ -214,12 +217,32 @@ impl SignalHandler {
     }
 }
 
+fn parse_cli_opts<'a>(args: Vec<String>) -> ArgMatches<'a> {
+    App::new("PID 1")
+        .version(crate_version!())
+        .set_term_width(72)
+        .about(
+            "\nIt does PID 1 things",
+        )
+        .arg(
+            Arg::with_name("command")
+                .index(1)
+                .help("Command to execute, forwarding signals to."),
+        )
+        .arg(
+            Arg::with_name("arguments")
+                .index(2)
+                .multiple(true)
+                .help("Arguments to the command being executed.")
+        )
+        .get_matches_from(args)
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        eprintln!("Need at least a command to execute!");
-        process::exit(1);
-    }
+    let matches = parse_cli_opts(args);
+    let command = value_t!(matches, "command", String).unwrap_or_else(|e| e.exit());
+    let command_args = values_t!(matches, "arguments", String).unwrap_or_else(|e| e.exit());
 
     let masker = ThreadMasker::new(SIGNALS_TO_HANDLE);
     masker.block_for_thread();
@@ -233,8 +256,7 @@ fn main() {
     let handler = SignalHandler::new(receiver, pid_clone, SIGNALS_TO_HANDLE);
     handler.launch();
 
-    let mut child = Command::new(&args[1]).args(args[2..].iter()).spawn().unwrap();
-
+    let mut child = Command::new(&command).args(command_args.iter()).spawn().unwrap();
     pid.set_pid(child.id() as i32);
     eprintln!("My pid: {} - child: {}", process::id(), child.id());
 
