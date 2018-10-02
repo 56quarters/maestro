@@ -13,8 +13,9 @@ extern crate signal_hook;
 
 use clap::{App, Arg, ArgMatches};
 use crossbeam_channel::Receiver;
-use libc::c_int;
-use nix::sys::signal::{SigSet, Signal};
+use libc::pid_t;
+use nix::sys::signal::{kill, SigSet, Signal};
+use nix::unistd::Pid;
 use signal_hook::iterator::Signals;
 use std::cell::Cell;
 use std::env;
@@ -100,25 +101,31 @@ impl ThreadMasker {
 /// signals is created.
 #[derive(Debug)]
 struct ChildPid {
-    pid: Mutex<Cell<Option<i32>>>,
+    pid: Mutex<Cell<Option<Pid>>>,
 }
 
 impl ChildPid {
     /// Get the PID of the child if it has been set, `None` if it hasn't yet
-    fn get_pid(&self) -> Option<i32> {
+    fn get_pid(&self) -> Option<Pid> {
         let cell = self.pid.lock().unwrap();
         cell.get()
     }
 
     /// Set the PID of the child process.
-    fn set_pid(&self, pid: i32) {
+    fn set_pid(&self, pid: Pid) {
         let cell = self.pid.lock().unwrap();
         cell.set(Some(pid))
     }
 }
 
-impl From<i32> for ChildPid {
-    fn from(pid: i32) -> Self {
+impl From<pid_t> for ChildPid {
+    fn from(pid: pid_t) -> Self {
+        Self::from(Pid::from_raw(pid))
+    }
+}
+
+impl From<Pid> for ChildPid {
+    fn from(pid: Pid) -> Self {
         ChildPid {
             pid: Mutex::new(Cell::new(Some(pid))),
         }
@@ -193,7 +200,7 @@ impl SignalHandler {
     }
 
     /// Take all appropriate action for the signal including forwarding it to the child PID.
-    fn dispatch(pid: i32, sig: Signal) {
+    fn dispatch(pid: Pid, sig: Signal) {
         if sig == Signal::SIGCHLD {
             Self::wait_child();
         }
@@ -212,8 +219,11 @@ impl SignalHandler {
     }
 
     /// Send the given signal to our child process.
-    fn propagate(pid: i32, sig: Signal) {
-        unsafe { libc::kill(pid, sig as c_int) };
+    fn propagate(pid: Pid, sig: Signal) {
+        // It's possible that the process has already died by the time we attempt to
+        // send this signal so we don't really care if it's successful here, just try
+        // to send it and ignore any failures.
+        let _ = kill(pid, sig);
     }
 
     /// Spawn a thread that will receive signals from another thread via a crossbeam
@@ -265,7 +275,7 @@ fn main() {
     handler.launch();
 
     let mut child = Command::new(&arguments[0]).args(&arguments[1..]).spawn().unwrap();
-    pid.set_pid(child.id() as i32);
+    pid.set_pid(Pid::from_raw(child.id() as pid_t));
 
     match child.wait() {
         Err(e) => eprintln!("error waiting for child: {}", e),
