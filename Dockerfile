@@ -10,4 +10,4 @@ RUN cargo build --release --target=x86_64-unknown-linux-musl \
 FROM alpine:latest
 COPY --from=build /usr/src/blag/target/x86_64-unknown-linux-musl/release/blag /usr/local/bin/blag
 ENTRYPOINT ["/usr/local/bin/blag"]
-CMD ["/bin/cat"]
+CMD ["--help"]
