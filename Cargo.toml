@@ -9,3 +9,15 @@ crossbeam-channel = "0.2.6"
 libc = "0.2.43"
 nix = "0.11.0"
 signal-hook = "0.1.5"
+
+[lib]
+name = "blag"
+path = "src/blag/lib.rs"
+
+[[bin]]
+name = "blag"
+path = "src/bin/blag.rs"
+doc = false
+
+[badges]
+travis-ci = { repository = "tshlabs/staccato" }

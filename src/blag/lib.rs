@@ -4,14 +4,11 @@
 
 //!
 
-#[macro_use]
-extern crate clap;
 extern crate crossbeam_channel;
 extern crate libc;
 extern crate nix;
 extern crate signal_hook;
 
-use clap::{App, Arg, ArgMatches};
 use crossbeam_channel::Receiver;
 use libc::pid_t;
 use nix::sys::signal::{kill, SigSet, Signal};
@@ -19,9 +16,8 @@ use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::Pid;
 use signal_hook::iterator::Signals;
 use std::cell::Cell;
-use std::process::{self, Command};
 use std::sync::{Arc, Mutex};
-use std::{env, fmt, thread};
+use std::{fmt, thread};
 
 const CHANNEL_CAP: usize = 32;
 
@@ -29,7 +25,7 @@ const CHANNEL_CAP: usize = 32;
 ///
 /// These signals will be caught and forwarded on a single thread in this process
 /// and masked in all other threads.
-const SIGNALS_TO_HANDLE: &[Signal] = &[
+pub const SIGNALS_TO_HANDLE: &[Signal] = &[
     Signal::SIGABRT,
     Signal::SIGALRM,
     Signal::SIGBUS,
@@ -55,13 +51,13 @@ const SIGNALS_TO_HANDLE: &[Signal] = &[
 /// called. This does not modify any existing masks. However, the signals blocked
 /// and unblocked by default are nearly all signals that a process could actually
 /// catch or would want to catch.
-struct ThreadMasker {
+pub struct ThreadMasker {
     mask: SigSet,
 }
 
 impl ThreadMasker {
     /// Set the allowed signals that will be blocked or unblocked.
-    fn new(allowed: &[Signal]) -> Self {
+    pub fn new(allowed: &[Signal]) -> Self {
         // Start from an empty set of signals and only add the ones that we expect
         // to handle and hence need to mask from all threads that *aren't* specifically
         // for handling signals.
@@ -79,7 +75,7 @@ impl ThreadMasker {
     /// # Panics
     ///
     /// This method will panic if the thread signal mask cannot be set.
-    fn allow_for_thread(&self) {
+    pub fn allow_for_thread(&self) {
         self.mask.thread_unblock().unwrap();
     }
 
@@ -88,7 +84,7 @@ impl ThreadMasker {
     /// # Panics
     ///
     /// This method will panic if the thread signal mask cannot be set.
-    fn block_for_thread(&self) {
+    pub fn block_for_thread(&self) {
         self.mask.thread_block().unwrap();
     }
 }
@@ -113,19 +109,19 @@ impl fmt::Debug for ThreadMasker {
 /// PID but the child hasn't been launched yet at the time the thread to forward
 /// signals is created.
 #[derive(Debug)]
-struct ChildPid {
+pub struct ChildPid {
     pid: Mutex<Cell<Option<Pid>>>,
 }
 
 impl ChildPid {
     /// Get the PID of the child if it has been set, `None` if it hasn't yet
-    fn get_pid(&self) -> Option<Pid> {
+    pub fn get_pid(&self) -> Option<Pid> {
         let cell = self.pid.lock().unwrap();
         cell.get()
     }
 
     /// Set the PID of the child process.
-    fn set_pid(&self, pid: Pid) {
+    pub fn set_pid(&self, pid: Pid) {
         let cell = self.pid.lock().unwrap();
         cell.set(Some(pid))
     }
@@ -158,13 +154,13 @@ impl Default for ChildPid {
 ///
 /// This will take care of unmasking the desired signals for the thread launched.
 #[derive(Debug)]
-struct SignalCatcher {
+pub struct SignalCatcher {
     signals: Signals,
     masker: ThreadMasker,
 }
 
 impl SignalCatcher {
-    fn new(allowed: &[Signal]) -> Self {
+    pub fn new(allowed: &[Signal]) -> Self {
         let allowed_ints: Vec<i32> = allowed.iter().map(|s| *s as i32).collect();
 
         SignalCatcher {
@@ -177,7 +173,7 @@ impl SignalCatcher {
     /// the returned crossbeam channel `Receiver` instance.
     ///
     /// The channel used has a finite capacity.
-    fn launch(self) -> Receiver<Signal> {
+    pub fn launch(self) -> Receiver<Signal> {
         let (send, recv) = crossbeam_channel::bounded(CHANNEL_CAP);
         thread::spawn(move || {
             self.masker.allow_for_thread();
@@ -197,7 +193,7 @@ impl SignalCatcher {
 /// This will take care of blocking the signals that should be handled by a different
 /// thread.
 #[derive(Debug)]
-struct SignalHandler {
+pub struct SignalHandler {
     receiver: Receiver<Signal>,
     child: Arc<ChildPid>,
     masker: ThreadMasker,
@@ -206,7 +202,7 @@ struct SignalHandler {
 impl SignalHandler {
     /// Set the channel for receiving signals, PID of our child, and list of signals
     /// that should be blocked in our thread since they are being handled elsewhere.
-    fn new(receiver: Receiver<Signal>, child: Arc<ChildPid>, allowed: &[Signal]) -> Self {
+    pub fn new(receiver: Receiver<Signal>, child: Arc<ChildPid>, allowed: &[Signal]) -> Self {
         SignalHandler {
             receiver,
             child,
@@ -246,7 +242,7 @@ impl SignalHandler {
     /// Spawn a thread that will receive signals from another thread via a crossbeam
     /// channel and propagate them to the child process launched as well as clean up
     /// after any children (via `libc::waitpid`).
-    fn launch(self) {
+    pub fn launch(self) {
         thread::spawn(move || {
             self.masker.block_for_thread();
 
@@ -258,59 +254,5 @@ impl SignalHandler {
                 }
             }
         });
-    }
-}
-
-fn parse_cli_opts<'a>(args: Vec<String>) -> ArgMatches<'a> {
-    App::new("PID 1")
-        .version(crate_version!())
-        .set_term_width(72)
-        .about("\nIt does PID 1 things")
-        .arg(Arg::with_name("arguments").multiple(true).help(
-            "Command to execute and arguments to it. Note that the command \
-             must be an absolute path. For example `/usr/bin/whatever`, not just \
-             `whatever`. Any arguments to pass to the command should be listed as \
-             well, separated with spaces.",
-        ))
-        .get_matches_from(args)
-}
-
-fn main() {
-    let matches = parse_cli_opts(env::args().collect());
-    let arguments = values_t!(matches, "arguments", String).unwrap_or_else(|e| e.exit());
-
-    let masker = ThreadMasker::new(SIGNALS_TO_HANDLE);
-    masker.block_for_thread();
-
-    let catcher = SignalCatcher::new(SIGNALS_TO_HANDLE);
-    let receiver = catcher.launch();
-
-    let pid = Arc::new(ChildPid::default());
-    let pid_clone = Arc::clone(&pid);
-
-    let handler = SignalHandler::new(receiver, pid_clone, SIGNALS_TO_HANDLE);
-    handler.launch();
-
-    let mut child = match Command::new(&arguments[0]).args(&arguments[1..]).spawn() {
-        Err(e) => {
-            eprintln!("blag: command error: {}", e);
-            process::exit(1);
-        }
-        Ok(c) => c,
-    };
-
-    pid.set_pid(Pid::from_raw(child.id() as pid_t));
-    let status = match child.wait() {
-        Err(e) => {
-            eprintln!("blag: wait error: {}", e);
-            process::exit(1);
-        }
-        Ok(s) => s,
-    };
-
-    if let Some(code) = status.code() {
-        process::exit(code);
-    } else {
-        process::exit(0);
     }
 }
