@@ -15,12 +15,12 @@ use clap::{App, Arg, ArgMatches};
 use crossbeam_channel::Receiver;
 use libc::pid_t;
 use nix::sys::signal::{kill, SigSet, Signal};
+use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::Pid;
 use signal_hook::iterator::Signals;
 use std::cell::Cell;
 use std::env;
-use std::process::{self, Command};
-use std::ptr;
+use std::process::{self, Child, Command};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -208,13 +208,15 @@ impl SignalHandler {
         Self::propagate(pid, sig);
     }
 
-    /// Use `libc::waitpid` to cleanup after any children that have changed state.
+    /// Use `waitpid` to cleanup after any children that have changed state.
     fn wait_child() {
         loop {
-            let res = unsafe { libc::waitpid(-1, ptr::null_mut(), libc::WNOHANG) };
-            if res <= 0 {
-                break;
-            }
+            match waitpid(Pid::from_raw(-1), Some(WaitPidFlag::WNOHANG)) {
+                Ok(WaitStatus::StillAlive) | Err(_) => {
+                    break;
+                }
+                _ => (),
+            };
         }
     }
 
@@ -283,11 +285,17 @@ fn main() {
     };
 
     pid.set_pid(Pid::from_raw(child.id() as pid_t));
-    match child.wait() {
+    let status = match child.wait() {
         Err(e) => {
             eprintln!("blag: wait error: {}", e);
             process::exit(1);
         }
-        _ => (),
+        Ok(s) => s,
+    };
+
+    if let Some(code) = status.code() {
+        process::exit(code);
+    } else {
+        process::exit(0);
     }
 }
