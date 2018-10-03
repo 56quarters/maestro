@@ -20,7 +20,7 @@ use nix::unistd::Pid;
 use signal_hook::iterator::Signals;
 use std::cell::Cell;
 use std::env;
-use std::process::{self, Child, Command};
+use std::process::{self, Command};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
