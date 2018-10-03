@@ -19,10 +19,9 @@ use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::Pid;
 use signal_hook::iterator::Signals;
 use std::cell::Cell;
-use std::env;
 use std::process::{self, Command};
 use std::sync::{Arc, Mutex};
-use std::thread;
+use std::{env, fmt, thread};
 
 const CHANNEL_CAP: usize = 32;
 
@@ -94,6 +93,20 @@ impl ThreadMasker {
     }
 }
 
+impl fmt::Debug for ThreadMasker {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut signals = vec![];
+
+        for sig in Signal::iterator() {
+            if self.mask.contains(sig) {
+                signals.push(sig as i32);
+            }
+        }
+
+        write!(f, "ThreadMasker {{ mask: {:?} }}", signals)
+    }
+}
+
 /// Holder for the PID of the child process we launch.
 ///
 /// This exists because the thread that forwards signals to the child needs its
@@ -144,6 +157,7 @@ impl Default for ChildPid {
 /// another thread via a crossbeam channel.
 ///
 /// This will take care of unmasking the desired signals for the thread launched.
+#[derive(Debug)]
 struct SignalCatcher {
     signals: Signals,
     masker: ThreadMasker,
@@ -182,6 +196,7 @@ impl SignalCatcher {
 ///
 /// This will take care of blocking the signals that should be handled by a different
 /// thread.
+#[derive(Debug)]
 struct SignalHandler {
     receiver: Receiver<Signal>,
     child: Arc<ChildPid>,
