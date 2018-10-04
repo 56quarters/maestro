@@ -20,4 +20,4 @@ path = "src/bin/blag.rs"
 doc = false
 
 [badges]
-travis-ci = { repository = "tshlabs/staccato" }
+travis-ci = { repository = "tshlabs/blag" }
