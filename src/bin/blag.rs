@@ -24,7 +24,7 @@ fn parse_cli_opts<'a>(args: Vec<String>) -> ArgMatches<'a> {
         .version(crate_version!())
         .set_term_width(72)
         .about("\nIt does PID 1 things")
-        .arg(Arg::with_name("arguments").multiple(true).help(
+        .arg(Arg::with_name("command").multiple(true).help(
             "Command to execute and arguments to it. Note that the command \
              must be an absolute path. For example `/usr/bin/whatever`, not just \
              `whatever`. Any arguments to pass to the command should be listed as \
@@ -35,7 +35,7 @@ fn parse_cli_opts<'a>(args: Vec<String>) -> ArgMatches<'a> {
 
 fn main() {
     let matches = parse_cli_opts(env::args().collect());
-    let arguments = values_t!(matches, "arguments", String).unwrap_or_else(|e| e.exit());
+    let arguments = values_t!(matches, "command", String).unwrap_or_else(|e| e.exit());
 
     let masker = ThreadMasker::new(SIGNALS_TO_HANDLE);
     masker.block_for_thread();
