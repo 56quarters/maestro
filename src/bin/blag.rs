@@ -15,6 +15,7 @@ use libc::pid_t;
 use nix::unistd::Pid;
 use std::env;
 use std::process::{self, Command};
+use std::os::unix::process::ExitStatusExt;
 use std::sync::Arc;
 
 use blag::{ChildPid, SignalCatcher, SignalHandler, ThreadMasker, SIGNALS_TO_HANDLE};
@@ -68,6 +69,8 @@ fn main() {
 
     if let Some(code) = status.code() {
         process::exit(code);
+    } else if let Some(sig) = status.signal() {
+        process::exit(128 + sig);
     } else {
         process::exit(0);
     }
