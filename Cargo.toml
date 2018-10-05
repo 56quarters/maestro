@@ -1,7 +1,7 @@
 [package]
 name = "blag"
 version = "0.1.0"
-authors = ["Nick Pillitteri <nickp@smartertravelmedia.com>"]
+authors = ["TSH Labs"]
 
 [dependencies]
 clap = "2.32"
