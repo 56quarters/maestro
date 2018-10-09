@@ -4,7 +4,7 @@
 
 //!
 
-extern crate blag;
+extern crate maestro;
 #[macro_use]
 extern crate clap;
 extern crate libc;
@@ -18,13 +18,13 @@ use std::process::{self, Command};
 use std::os::unix::process::ExitStatusExt;
 use std::sync::Arc;
 
-use blag::{ChildPid, SignalCatcher, SignalHandler, ThreadMasker, SIGNALS_TO_HANDLE};
+use maestro::{ChildPid, SignalCatcher, SignalHandler, ThreadMasker, SIGNALS_TO_HANDLE};
 
 fn parse_cli_opts<'a>(args: Vec<String>) -> ArgMatches<'a> {
-    App::new("PID 1")
+    App::new("Maestro")
         .version(crate_version!())
         .set_term_width(72)
-        .about("\nIt does PID 1 things")
+        .about("\nBasic init process for use in a container")
         .arg(Arg::with_name("command").multiple(true).help(
             "Command to execute and arguments to it. Note that the command \
              must be an absolute path. For example `/usr/bin/whatever`, not just \

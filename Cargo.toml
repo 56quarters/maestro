@@ -1,5 +1,5 @@
 [package]
-name = "blag"
+name = "maestro"
 version = "0.1.0"
 authors = ["TSH Labs"]
 
@@ -11,12 +11,12 @@ nix = "0.11.0"
 signal-hook = "0.1.5"
 
 [lib]
-name = "blag"
-path = "src/blag/lib.rs"
+name = "maestro"
+path = "src/maestro/lib.rs"
 
 [[bin]]
 name = "blag"
-path = "src/bin/blag.rs"
+path = "src/bin/maestro.rs"
 doc = false
 
 [badges]
