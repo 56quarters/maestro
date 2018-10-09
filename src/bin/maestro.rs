@@ -52,7 +52,7 @@ fn main() {
 
     let mut child = match Command::new(&arguments[0]).args(&arguments[1..]).spawn() {
         Err(e) => {
-            eprintln!("blag: command error: {}", e);
+            eprintln!("maestro: command error: {}", e);
             process::exit(1);
         }
         Ok(c) => c,
@@ -61,7 +61,7 @@ fn main() {
     pid.set_pid(Pid::from_raw(child.id() as pid_t));
     let status = match child.wait() {
         Err(e) => {
-            eprintln!("blag: wait error: {}", e);
+            eprintln!("maestro: wait error: {}", e);
             process::exit(1);
         }
         Ok(s) => s,

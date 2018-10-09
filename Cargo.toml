@@ -15,9 +15,9 @@ name = "maestro"
 path = "src/maestro/lib.rs"
 
 [[bin]]
-name = "blag"
+name = "maestro"
 path = "src/bin/maestro.rs"
 doc = false
 
 [badges]
-travis-ci = { repository = "tshlabs/blag" }
+travis-ci = { repository = "tshlabs/maestro" }
