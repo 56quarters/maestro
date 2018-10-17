@@ -26,10 +26,8 @@ fn parse_cli_opts<'a>(args: Vec<String>) -> ArgMatches<'a> {
         .set_term_width(72)
         .about("\nBasic init process for use in a container")
         .arg(Arg::with_name("command").multiple(true).help(
-            "Command to execute and arguments to it. Note that the command \
-             must be an absolute path. For example `/usr/bin/whatever`, not just \
-             `whatever`. Any arguments to pass to the command should be listed as \
-             well, separated with spaces.",
+            "Command to execute and arguments to it. Any arguments to pass to \
+             the command should be listed as well, separated with spaces.",
         ))
         .get_matches_from(args)
 }
