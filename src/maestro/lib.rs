@@ -91,13 +91,11 @@ impl ThreadMasker {
 
 impl fmt::Debug for ThreadMasker {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut signals = vec![];
+        let signals: Vec<i32> = Signal::iterator()
+            .filter(|s| self.mask.contains(*s))
+            .map(|s| s as i32)
+            .collect();
 
-        for sig in Signal::iterator() {
-            if self.mask.contains(sig) {
-                signals.push(sig as i32);
-            }
-        }
 
         write!(f, "ThreadMasker {{ mask: {:?} }}", signals)
     }
