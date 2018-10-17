@@ -14,8 +14,8 @@ use clap::{App, Arg, ArgMatches};
 use libc::pid_t;
 use nix::unistd::Pid;
 use std::env;
-use std::process::{self, Command};
 use std::os::unix::process::ExitStatusExt;
+use std::process::{self, Command};
 use std::sync::Arc;
 
 use maestro::{ChildPid, SignalCatcher, SignalHandler, ThreadMasker, SIGNALS_TO_HANDLE};

@@ -96,7 +96,6 @@ impl fmt::Debug for ThreadMasker {
             .map(|s| s as i32)
             .collect();
 
-
         write!(f, "ThreadMasker {{ mask: {:?} }}", signals)
     }
 }
