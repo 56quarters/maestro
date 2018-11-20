@@ -42,18 +42,24 @@ fn main() {
     let matches = parse_cli_opts(env::args().collect());
     let arguments = values_t!(matches, "command", String).unwrap_or_else(|e| e.exit());
 
+    // Block all signals in the current (main) thread
     let masker = ThreadMasker::new(SIGNALS_TO_HANDLE);
     masker.block_for_thread();
 
+    // Spawn another thread that will catch all signals and send them to yet another
+    // thread via a send/receive channel pair.
     let catcher = SignalCatcher::new(SIGNALS_TO_HANDLE);
     let receiver = catcher.launch();
 
     let pid = Arc::new(ChildPid::default());
     let pid_clone = Arc::clone(&pid);
 
+    // Spawn a thread that will read each signal received from the channel and send
+    // it to the child process.
     let handler = SignalHandler::new(receiver, pid_clone, SIGNALS_TO_HANDLE);
     handler.launch();
 
+    // Actually launch the child process.
     let mut child = match Command::new(&arguments[0]).args(&arguments[1..]).spawn() {
         Err(e) => {
             eprintln!("maestro: command error: {}", e);
@@ -62,7 +68,11 @@ fn main() {
         Ok(c) => c,
     };
 
+    // Set the PID of the child (needed for the "handler" since it was spawned before
+    // we actually knew the PID of the child).
     pid.set_pid(Pid::from_raw(child.id() as pid_t));
+
+    // Wait for the child to exit.
     let status = match child.wait() {
         Err(e) => {
             eprintln!("maestro: wait error: {}", e);

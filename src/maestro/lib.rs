@@ -27,7 +27,7 @@ use std::{fmt, thread};
 
 const CHANNEL_CAP: usize = 32;
 
-/// All signals that can and should be caught an forwarded to our child process.
+/// All signals that can and should be caught and forwarded to our child process.
 ///
 /// These signals will be caught and forwarded on a single thread in this process
 /// and masked in all other threads.
