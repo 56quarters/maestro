@@ -14,13 +14,13 @@ extern crate libc;
 extern crate nix;
 extern crate signal_hook;
 
-use std::sync::mpsc::{Receiver, sync_channel};
 use libc::pid_t;
 use nix::sys::signal::{kill, SigSet, Signal};
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
 use nix::unistd::Pid;
 use signal_hook::iterator::Signals;
 use std::cell::Cell;
+use std::sync::mpsc::{sync_channel, Receiver};
 use std::sync::{Arc, Mutex};
 use std::{fmt, thread};
 
@@ -256,5 +256,52 @@ impl SignalHandler {
                 }
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ThreadMasker;
+    use nix::sys::signal::{SigSet, Signal};
+    use std::thread;
+
+    #[test]
+    fn test_thread_masker_allowed_for_thread() {
+        thread::spawn(|| {
+            // Block all signals in the thread so we can later allow them
+            SigSet::all().thread_block().unwrap();
+
+            let allowed = &[Signal::SIGTERM, Signal::SIGINT, Signal::SIGUSR1, Signal::SIGUSR2];
+            let masker = ThreadMasker::new(allowed);
+            masker.allow_for_thread();
+
+            let set = SigSet::thread_get_mask().unwrap();
+            assert!(!set.contains(Signal::SIGTERM));
+            assert!(!set.contains(Signal::SIGINT));
+            assert!(!set.contains(Signal::SIGUSR1));
+            assert!(!set.contains(Signal::SIGUSR2));
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[test]
+    fn test_thread_masker_blocked_for_thread() {
+        thread::spawn(|| {
+            // Unblock all signals in the thread so we can later block them
+            SigSet::all().thread_unblock().unwrap();
+
+            let blocked = &[Signal::SIGTERM, Signal::SIGINT, Signal::SIGUSR1, Signal::SIGUSR2];
+            let masker = ThreadMasker::new(blocked);
+            masker.block_for_thread();
+
+            let set = SigSet::thread_get_mask().unwrap();
+            assert!(set.contains(Signal::SIGTERM));
+            assert!(set.contains(Signal::SIGINT));
+            assert!(set.contains(Signal::SIGUSR1));
+            assert!(set.contains(Signal::SIGUSR2));
+        })
+        .join()
+        .unwrap();
     }
 }
