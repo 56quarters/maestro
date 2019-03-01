@@ -10,12 +10,11 @@
 
 //!
 
-extern crate crossbeam_channel;
 extern crate libc;
 extern crate nix;
 extern crate signal_hook;
 
-use crossbeam_channel::Receiver;
+use std::sync::mpsc::{Receiver, sync_channel};
 use libc::pid_t;
 use nix::sys::signal::{kill, SigSet, Signal};
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
@@ -177,12 +176,12 @@ impl SignalCatcher {
     ///
     /// The channel used has a finite capacity.
     pub fn launch(self) -> Receiver<Signal> {
-        let (send, recv) = crossbeam_channel::bounded(CHANNEL_CAP);
+        let (send, recv) = sync_channel(CHANNEL_CAP);
         thread::spawn(move || {
             self.masker.allow_for_thread();
 
             for sig in self.signals.forever() {
-                send.send(Signal::from_c_int(sig).unwrap());
+                let _ = send.send(Signal::from_c_int(sig).unwrap());
             }
         });
 
@@ -242,9 +241,9 @@ impl SignalHandler {
         let _ = kill(pid, sig);
     }
 
-    /// Spawn a thread that will receive signals from another thread via a crossbeam
-    /// channel and propagate them to the child process launched as well as clean up
-    /// after any children (via `libc::waitpid`).
+    /// Spawn a thread that will receive signals from another thread via a channel
+    /// and propagate them to the child process launched as well as clean up after
+    /// any children (via `libc::waitpid`).
     pub fn launch(self) {
         thread::spawn(move || {
             self.masker.block_for_thread();

@@ -12,7 +12,6 @@ keywords = ["init", "pid1", "container"]
 
 [dependencies]
 clap = "2.32"
-crossbeam-channel = "0.2.6"
 libc = "0.2.43"
 nix = "0.11.0"
 signal-hook = "0.1.5"
